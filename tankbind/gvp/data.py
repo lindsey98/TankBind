@@ -5,7 +5,8 @@ import torch, math
 import torch.utils.data as data
 import torch.nn.functional as F
 import torch_geometric
-import torch_cluster
+from torch_cluster import knn_graph
+
 
 def _normalize(tensor, dim=-1):
     '''
@@ -170,16 +171,16 @@ class ProteinGraphDataset(data.Dataset):
             mask = torch.isfinite(coords.sum(dim=(1,2)))
             coords[~mask] = np.inf
             
-            X_ca = coords[:, 1]
-            edge_index = torch_cluster.knn_graph(X_ca, k=self.top_k)
+            X_ca = coords[:, 1] # 只看α碳
+            edge_index = knn_graph(X_ca, k=self.top_k)
             
-            pos_embeddings = self._positional_embeddings(edge_index)
+            pos_embeddings = self._positional_embeddings(edge_index) # 计算所有α碳之间的pairwise distance
             E_vectors = X_ca[edge_index[0]] - X_ca[edge_index[1]]
             rbf = _rbf(E_vectors.norm(dim=-1), D_count=self.num_rbf, device=self.device)
             
-            dihedrals = self._dihedrals(coords)                     
-            orientations = self._orientations(X_ca)
-            sidechains = self._sidechains(coords)
+            dihedrals = self._dihedrals(coords)  # 主链原子坐标的二面角
+            orientations = self._orientations(X_ca) # 主链上每个碳α原子的前向和后向方向向量
+            sidechains = self._sidechains(coords) # 计算 N、CA 和 C 之间的向量来间接考虑了侧链的方向。这些向量可以被视为反映侧链大致方向的简化表示，因为侧链的第一个原子（β碳）的位置受到这些主链原子位置的影响。
             
             node_s = dihedrals
             node_v = torch.cat([orientations, sidechains.unsqueeze(-2)], dim=-2)
@@ -225,7 +226,7 @@ class ProteinGraphDataset(data.Dataset):
     def _positional_embeddings(self, edge_index, 
                                num_embeddings=None,
                                period_range=[2, 1000]):
-        # From https://github.com/jingraham/neurips19-graph-protein-design
+        # From https://github.com/jingraham/neurips19-graph-protein-design, RBF distance
         num_embeddings = num_embeddings or self.num_positional_embeddings
         d = edge_index[0] - edge_index[1]
      
@@ -246,7 +247,7 @@ class ProteinGraphDataset(data.Dataset):
 
     def _sidechains(self, X):
         n, origin, c = X[:, 0], X[:, 1], X[:, 2]
-        c, n = _normalize(c - origin), _normalize(n - origin)
+        c, n = _normalize(c - origin), _normalize(n - origin) # 侧链原子相对于alpha碳的方向向量
         bisector = _normalize(c + n)
         perp = _normalize(torch.cross(c, n))
         vec = -bisector * math.sqrt(1 / 3) - perp * math.sqrt(2 / 3)

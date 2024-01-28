@@ -2,7 +2,6 @@ import torch, functools
 from torch import nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
-from torch_scatter import scatter_add
 
 def tuple_sum(*args):
     '''
@@ -351,9 +350,20 @@ class GVPConvLayer(nn.Module):
                 self.conv(autoregressive_x, edge_index_backward, edge_attr_backward)
             )
             
-            count = scatter_add(torch.ones_like(dst), dst,
-                        dim_size=dh[0].size(0)).clamp(min=1).unsqueeze(-1)
-            
+            # count = scatter_add(torch.ones_like(dst), dst,
+            #             dim_size=dh[0].size(0)).clamp(min=1).unsqueeze(-1)
+
+            # Assuming dst is the tensor of indices and dim_size is the size of the dimension along which to scatter
+            dim_size = dh[0].size(0)
+            src = torch.ones_like(dst)
+            out = torch.zeros(dim_size, dtype=src.dtype, device=src.device)
+
+            # Use index_add_ for scattering
+            out.index_add_(0, dst, src)
+
+            # Clamp and unsqueeze the result
+            count = out.clamp(min=1).unsqueeze(-1)
+
             dh = dh[0] / count, dh[1] / count.unsqueeze(-1)
 
         else:
