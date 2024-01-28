@@ -1,6 +1,6 @@
 
 import torch
-from metrics import *
+from tankbind.metrics import *
 import numpy as np
 import pandas as pd
 import scipy.spatial
@@ -8,7 +8,6 @@ from torch_geometric.data import Data
 from torch_geometric.data import HeteroData
 import torch.nn.functional as F
 from tqdm import tqdm
-import torchmetrics
 
 def read_pdbbind_data(fileName):
     with open(fileName) as f:

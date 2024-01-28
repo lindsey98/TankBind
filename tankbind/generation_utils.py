@@ -67,9 +67,11 @@ def distance_optimize_compound_coords(coords, y_pred, protein_nodes_xyz,
                         compound_pair_dis_constraint, total_epoch=5000, loss_function=distance_loss_function, LAS_distance_constraint_mask=None, mode=0, show_progress=False):
     # random initialization. center at the protein center.
     c_pred = protein_nodes_xyz.mean(axis=0)
-    x = (5 * (2 * torch.rand(coords.shape) - 1) + c_pred.reshape(1, 3).detach())
+
+    x = (5 * (2 * torch.rand(coords.shape).to(c_pred.device) - 1) + c_pred.reshape(1, 3).detach())
     x.requires_grad = True
     optimizer = torch.optim.Adam([x], lr=0.1)
+
     #     optimizer = torch.optim.LBFGS([x], lr=0.01)
     loss_list = []
     rmsd_list = []

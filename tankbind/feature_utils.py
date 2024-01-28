@@ -17,49 +17,74 @@ import scipy
 import scipy.spatial
 import requests
 from rdkit.Geometry import Point3D
-
+from tankbind import gvp
+from tankbind.gvp.data import ProteinGraphDataset
 from torchdrug import data as td     # conda install torchdrug -c milagraph -c conda-forge -c pytorch -c pyg if fail to import
+import random
 
-def read_mol(sdf_fileName, mol2_fileName, verbose=False):
-    Chem.WrapLogs()
-    stderr = sys.stderr
-    sio = sys.stderr = StringIO()
-    mol = Chem.MolFromMolFile(sdf_fileName, sanitize=False)
-    problem = False
-    try:
-        Chem.SanitizeMol(mol)
-        mol = Chem.RemoveHs(mol)
-        sm = Chem.MolToSmiles(mol)
-    except Exception as e:
-        sm = str(e)
-        problem = True
-    if problem:
-        mol = Chem.MolFromMol2File(mol2_fileName, sanitize=False)
-        problem = False
+def read_mol(sdf_filename, mol2_filename, verbose=False):
+    def read_and_process(file_name, file_format):
+        """Attempt to read and sanitize a molecule from a given file."""
+        if file_format == 'sdf':
+            mol = Chem.MolFromMolFile(file_name, sanitize=False)
+        elif file_format == 'mol2':
+            mol = Chem.MolFromMol2File(file_name, sanitize=False)
+        else:
+            return None, "Unsupported file format"
+
+        if mol is None:
+            return None, "Failed to load molecule"
+
         try:
             Chem.SanitizeMol(mol)
             mol = Chem.RemoveHs(mol)
             sm = Chem.MolToSmiles(mol)
-            problem = False
+            return mol, None  # No error
         except Exception as e:
-            sm = str(e)
-            problem = True
+            return None, str(e)
 
-    if verbose:
-        print(sio.getvalue())
-    sys.stderr = stderr
-    return mol, problem
+    # Capture RDKit warnings and errors
+    original_stderr = sys.stderr
+    sys.stderr = StringIO()
+
+    mol, error = read_and_process(sdf_filename, 'sdf')
+    if error:
+        if verbose:
+            print(f"SDF Error: {error}")
+        mol, error = read_and_process(mol2_filename, 'mol2')
+        if error and verbose:
+            print(f"Mol2 Error: {error}")
+
+    # Restore the original stderr
+    sys.stderr = original_stderr
+
+    if verbose and not error:
+        print("Molecule loaded successfully")
+
+    return mol, bool((error is not None))
 
 
-def write_renumbered_sdf(toFile, sdf_fileName, mol2_fileName):
-    # read in mol
-    mol, _ = read_mol(sdf_fileName, mol2_fileName)
-    # reorder the mol atom number as in smiles.
-    m_order = list(mol.GetPropsAsDict(includePrivate=True, includeComputed=True)['_smilesAtomOutputOrder'])
-    mol = Chem.RenumberAtoms(mol, m_order)
-    w = Chem.SDWriter(toFile)
-    w.write(mol)
-    w.close()
+def write_renumbered_sdf(to_file, sdf_filename, mol2_filename):
+    # Improved read_mol function should be defined in the same script or imported if it's in a different module
+    mol, problem = read_mol(sdf_filename,  mol2_filename)  # Assuming read_molecule is the improved version of read_mol
+
+    if problem or mol is None:
+        print("Error reading molecule. Aborting operation.")
+        return
+
+    try:
+        if mol.HasProp('_smilesAtomOutputOrder'):
+            m_order = list(mol.GetPropsAsDict(includePrivate=True, includeComputed=True)['_smilesAtomOutputOrder'])
+            mol = Chem.RenumberAtoms(mol, m_order)
+        else:
+            print("Molecule does not have '_smilesAtomOutputOrder' property. Writing without reordering.")
+
+        with Chem.SDWriter(to_file) as writer:
+            writer.write(mol)
+            print(f"Molecule written to {to_file}")
+
+    except Exception as e:
+        print(f"An error occurred while writing the molecule: {e}")
 
 def get_canonical_smiles(smiles):
     return Chem.MolToSmiles(Chem.MolFromSmiles(smiles))
@@ -157,21 +182,22 @@ def extract_torchdrug_feature_from_mol(mol, has_LAS_mask=False):
         LAS_distance_constraint_mask = get_LAS_distance_constraint_mask(mol)
     else:
         LAS_distance_constraint_mask = None
+    # 每个原子的pairwise distance
     pair_dis_distribution = get_compound_pair_dis_distribution(coords, LAS_distance_constraint_mask=LAS_distance_constraint_mask)
+    # 计算一些原子的性质：原子类型，是否在环中，原子的连接性， 原子上的电荷 etc
     molstd = td.Molecule.from_smiles(Chem.MolToSmiles(mol),node_feature='property_prediction')
     # molstd = td.Molecule.from_molecule(mol ,node_feature=['property_prediction'])
-    compound_node_features = molstd.node_feature # nodes_chemical_features
+    compound_node_features = molstd.node_feature # 性质作为node features
     edge_list = molstd.edge_list # [num_edge, 3]
     edge_weight = molstd.edge_weight # [num_edge, 1]
     assert edge_weight.max() == 1
     assert edge_weight.min() == 1
     assert coords.shape[0] == compound_node_features.shape[0]
-    edge_feature = molstd.edge_feature # [num_edge, edge_feature_dim]
+    edge_feature = molstd.edge_feature # [num_edge, edge_feature_dim]，键的类型，键的立体化学，键的极性
     x = (coords, compound_node_features, edge_list, edge_feature, pair_dis_distribution)
     return x
 
-import gvp
-import gvp.data
+
 
 three_to_one = {'ALA': 'A', 'CYS': 'C', 'ASP': 'D', 'GLU': 'E', 'PHE': 'F', 'GLY': 'G', 'HIS': 'H', 
                 'ILE': 'I', 'LYS': 'K', 'LEU': 'L', 'MET': 'M', 'ASN': 'N', 'PRO': 'P', 'GLN': 'Q', 
@@ -201,7 +227,7 @@ def get_clean_res_list(res_list, verbose=False, ensure_ca_exist=False, bfactor_c
 def get_protein_feature(res_list):
     # protein feature extraction code from https://github.com/drorlab/gvp-pytorch
     # ensure all res contains N, CA, C and O
-    res_list = [res for res in res_list if (('N' in res) and ('CA' in res) and ('C' in res) and ('O' in res))]
+    res_list = [res for res in res_list if (('N' in res) and ('CA' in res) and ('C' in res) and ('O' in res))] # only those residues that contain the four essential backbone atoms: Nitrogen (N), Carbon Alpha (CA), Carbon (C), and Oxygen (O)
     # construct the input for ProteinGraphDataset
     # which requires name, seq, and a list of shape N * 4 * 3
     structure = {}
@@ -210,12 +236,12 @@ def get_protein_feature(res_list):
     coords = []
     for res in res_list:
         res_coords = []
-        for atom in [res['N'], res['CA'], res['C'], res['O']]:
+        for atom in [res['N'], res['CA'], res['C'], res['O']]: # N、CA、C 和 O 这四种原子构成了蛋白质主链的骨架
             res_coords.append(list(atom.coord))
         coords.append(res_coords)
-    structure['coords'] = coords
+    structure['coords'] = coords # (#氨基酸, 4 (N, CA, C, O的位置), 3(三维坐标))
     torch.set_num_threads(1)        # this reduce the overhead, and speed up the process for me.
-    dataset = gvp.data.ProteinGraphDataset([structure])
+    dataset = ProteinGraphDataset([structure])
     protein = dataset[0]
     x = (protein.x, protein.seq, protein.node_s, protein.node_v, protein.edge_index, protein.edge_s, protein.edge_v)
     return x
@@ -302,6 +328,7 @@ def write_with_new_coords(mol, new_coords, toFile):
     w.close()
 
 def generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=30, fast_generation=False):
+    # 搜索30个ligand构象
     mol_from_rdkit = Chem.MolFromSmiles(smiles)
     if fast_generation:
         # conformation generated using Compute2DCoords is very fast, but less accurate.
@@ -313,36 +340,33 @@ def generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=30, fas
     write_with_new_coords(mol_from_rdkit, new_coords, rdkitMolFile)
 
 def select_chain_within_cutoff_to_ligand_v2(x):
-    # pdbFile = f"/pdbbind2020/pdbbind_files/{pdb}/{pdb}_protein.pdb"
-    # ligandFile = f"/pdbbind2020/renumber_atom_index_same_as_smiles/{pdb}.sdf"
-    # toFile = f"{toFolder}/{pdb}_protein.pdb"
-    # cutoff = 10
-    pdbFile, ligandFile, cutoff, toFile = x
-    
+    pdb_file, ligand_file, cutoff, to_file = x
     parser = PDBParser(QUIET=True)
-    s = parser.get_structure("x", pdbFile)
-    all_res = get_clean_res_list(s.get_residues(), verbose=False, ensure_ca_exist=True)
-    all_atoms = [atom for res in all_res for atom in res.get_atoms()]
-    protein_coords = np.array([atom.coord for atom in all_atoms])
-    chains = np.array([atom.full_id[2] for atom in all_atoms])
+    structure = parser.get_structure("structure", pdb_file)
 
-    mol = Chem.MolFromMolFile(ligandFile)
-    lig_coords = mol.GetConformer().GetPositions()
+    # get all residues in the protein, and then get all atoms
+    all_residues = get_clean_res_list(structure.get_residues(), verbose=False, ensure_ca_exist=True)
+    all_atoms = [atom for res in all_residues for atom in res.get_atoms()]
+    protein_coords = np.array([atom.get_coord() for atom in all_atoms])
+    chains = np.array([atom.get_full_id()[2] for atom in all_atoms])
 
-    protein_atom_to_lig_atom_dis = scipy.spatial.distance.cdist(protein_coords, lig_coords)
+    try:
+        mol = Chem.MolFromMolFile(ligand_file)
+    except OSError: # bad input file
+        return
+    ligand_coords = mol.GetConformer().GetPositions()
 
-    is_in_contact = (protein_atom_to_lig_atom_dis < cutoff).max(axis=1)
+    # compute pairwise distances between all protein atoms and all ligand atoms using
+    distances = scipy.spatial.distance.cdist(protein_coords, ligand_coords)
+    is_in_contact = np.any(distances < cutoff, axis=1)
     chains_in_contact = set(chains[is_in_contact])
-    
-    # save protein chains that belong to chains_in_contact
-    class MySelect(Select):
-        def accept_residue(self, residue, chains_in_contact=chains_in_contact):
-            pdb, _, chain, (_, resid, insertion) = residue.full_id
-            if chain in chains_in_contact:
-                return True
-            else:
-                return False
 
-    io=PDBIO()
-    io.set_structure(s)
-    io.save(toFile, MySelect())
+    class ChainSelector(Select):
+        def accept_chain(self, chain):
+            return chain.get_id() in chains_in_contact
+
+    io = PDBIO()
+    io.set_structure(structure)
+    io.save(to_file, ChainSelector())
+
+    print(f"Saved chains within {cutoff} Å of the ligand to '{to_file}'.")

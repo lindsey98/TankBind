@@ -6,11 +6,11 @@ from torch import nn
 from torch.nn import Linear
 import sys
 import torch.nn as nn
-from gvp import GVP, GVPConvLayer, LayerNorm, tuple_index
+from tankbind.gvp import GVP, GVPConvLayer, LayerNorm, tuple_index
 from torch.distributions import Categorical
 from torch_scatter import scatter_mean
-from GATv2 import GAT
-from GINv2 import GIN
+from tankbind.GATv2 import GAT
+from tankbind.GINv2 import GIN
 
 class GNN(torch.nn.Module):
     def __init__(self, hidden_channels, out_channels):
@@ -276,7 +276,10 @@ class Transition(torch.nn.Module):
 
 
 class IaBNet_with_affinity(torch.nn.Module):
-    def __init__(self, hidden_channels=128, embedding_channels=128, c=128, mode=0, protein_embed_mode=1, compound_embed_mode=1, n_trigonometry_module_stack=5, protein_bin_max=30, readout_mode=2):
+    def __init__(self, hidden_channels=128, embedding_channels=128, c=128, mode=0,
+                 protein_embed_mode=1, compound_embed_mode=1,
+                 n_trigonometry_module_stack=5, protein_bin_max=30, readout_mode=2):
+
         super().__init__()
         self.layernorm = torch.nn.LayerNorm(embedding_channels)
         self.protein_bin_max = protein_bin_max
@@ -289,8 +292,6 @@ class IaBNet_with_affinity(torch.nn.Module):
         if protein_embed_mode == 0:
             self.conv_protein = GNN(hidden_channels, embedding_channels)
             self.conv_compound = GNN(hidden_channels, embedding_channels)
-            # self.conv_protein = SAGEConv((-1, -1), embedding_channels)
-            # self.conv_compound = SAGEConv((-1, -1), embedding_channels)
         if protein_embed_mode == 1:
             self.conv_protein = GVP_embedding((6, 3), (embedding_channels, 16), 
                                               (32, 1), (32, 1), seq_in=True)

@@ -2,7 +2,7 @@ import pandas as pd
 import numpy as np
 import torch
 from torch_geometric.data import Dataset, InMemoryDataset, download_url
-from utils import construct_data_from_graph_gvp
+from tankbind.utils import construct_data_from_graph_gvp
 
 class TankBind_prediction(Dataset):
     def __init__(self, root, data=None, protein_dict=None, compound_dict=None, proteinMode=0, compoundMode=1,

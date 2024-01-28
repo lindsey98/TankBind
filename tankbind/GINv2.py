@@ -5,7 +5,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from torch.utils import checkpoint
-from torch_scatter import scatter_mean, scatter_add, scatter_max
+from torch_scatter import scatter_add
 from torchdrug import data, utils, layers
 from collections.abc import Sequence
 
