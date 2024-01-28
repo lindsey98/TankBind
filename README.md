@@ -46,10 +46,6 @@ p2rank v2.3 could be downloaded from here:
 
 https://github.com/rdk/p2rank/releases/download/2.3/p2rank_2.3.tar.gz
 
-Clone gyp-pytorch: 
-
-git clone https://github.com/drorlab/gvp-pytorch.git
-
 
 ## Test set evaluation
 We include the script for reproducing the self-dock result in
