@@ -63,13 +63,13 @@ if __name__ == '__main__':
     print('Valid pairs: ', data.shape) # fixme: I find different rdkit version will affect num valid pairs
 
     '''Write the readable ligands, and for ease of RMSD evaluation later, we renumber the atom index to be consistent with the smiles'''
-    # toFolder = f"{pre}/renumber_atom_index_same_as_smiles"
-    # os.makedirs(toFolder, exist_ok=True)
-    # for pdb in tqdm(pdb_list):
-    #     sdf_fileName = f"{pre}/merged_pdbbind_files/{pdb}/{pdb}_ligand.sdf"
-    #     mol2_fileName = f"{pre}/merged_pdbbind_files/{pdb}/{pdb}_ligand.mol2"
-    #     toFile = f"{toFolder}/{pdb}.sdf"
-    #     write_renumbered_sdf(toFile, sdf_fileName, mol2_fileName)
+    toFolder = f"{pre}/renumber_atom_index_same_as_smiles"
+    os.makedirs(toFolder, exist_ok=True)
+    for pdb in tqdm(pdb_list):
+        sdf_fileName = f"{pre}/merged_pdbbind_files/{pdb}/{pdb}_ligand.sdf"
+        mol2_fileName = f"{pre}/merged_pdbbind_files/{pdb}/{pdb}_ligand.mol2"
+        toFile = f"{toFolder}/{pdb}.sdf"
+        write_renumbered_sdf(toFile, sdf_fileName, mol2_fileName)
 
     '''We also reduced the possibility of encountering equally valid binding sites by removing chains that have no atom within 10Å from any atom of the ligand following the protocol described in [36].'''
     # toFolder = f"{pre}/protein_remove_extra_chains_10A/"
@@ -130,18 +130,18 @@ if __name__ == '__main__':
     # pool.exit()
 
     '''Embed ligand into features'''
-    # compound_dict = {}
-    # skip_pdb_list = []
-    # for pdb in tqdm(pdb_list):
-    #     mol, _ = read_mol(f"{pre}/renumber_atom_index_same_as_smiles/{pdb}.sdf", None)
-    #     # extract features from sdf.
-    #     try:
-    #         compound_dict[pdb] = extract_torchdrug_feature_from_mol(mol, has_LAS_mask=True)  # self-dock set has_LAS_mask to true
-    #     except Exception as e:
-    #         print(e)
-    #         skip_pdb_list.append(pdb)
-    #         print(pdb)
-    # torch.save(compound_dict, f"{tankbind_data_path}/compound_torchdrug_features.pt")
+    compound_dict = {}
+    skip_pdb_list = []
+    for pdb in tqdm(pdb_list):
+        mol, _ = read_mol(f"{pre}/renumber_atom_index_same_as_smiles/{pdb}.sdf", None)
+        # extract features from sdf.
+        try:
+            compound_dict[pdb] = extract_torchdrug_feature_from_mol(mol, has_LAS_mask=True)  # self-dock set has_LAS_mask to true
+        except Exception as e:
+            print(e)
+            skip_pdb_list.append(pdb)
+            print(pdb)
+    torch.save(compound_dict, f"{tankbind_data_path}/compound_torchdrug_features.pt")
 
     '''Construct dataset'''
     ### Protein bindng pockets

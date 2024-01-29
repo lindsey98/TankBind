@@ -38,88 +38,88 @@ if __name__ == '__main__':
     # img = Draw.MolToImage(molecule)
     # img.save(f"{pre}/output_image.png")
 
-    parser = PDBParser(QUIET=True)
-    s = parser.get_structure(pdb, native_pdb)
-    print(list(s.get_chains()))
-
-    # list HETATMs
-    c = s[0]['A']
-    res_list = list(c.get_residues())
-    hetro_list = [res for res in res_list if (res.full_id[-1][0] != ' ' and res.full_id[-1][0] != 'W')]
-    print(hetro_list)
-
-    # save cleaned protein.
-    ligand_seq_id = 602
-    proteinFile = f"{pre}/{pdb}_protein.pdb"
-    ligandFile = f"{pre}/{pdb}_FYH_ligand.sdf"
-    clean_res_list, ligand_list = split_protein_and_ligand(c, pdb, ligand_seq_id, proteinFile, ligandFile)
-
-    ligand_seq_id = 603
-    ligandFile = f"{pre}/{pdb}_STI_ligand.sdf"
-    clean_res_list, ligand_list = split_protein_and_ligand(c, pdb, ligand_seq_id, proteinFile, ligandFile)
-
-    # we also generated a sdf file using RDKit.
-    ligandFile = f"{pre}/{pdb}_STI_ligand.sdf"
-    smiles = Chem.MolToSmiles(Chem.MolFromMolFile(ligandFile))
-    rdkitMolFile = f"{pre}/{pdb}_STI_mol_from_rdkit.sdf"
-    shift_dis = 0  # for visual only, could be any number, shift the ligand away from the protein.
-    generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=shift_dis)
-
-    # we also generated a sdf file using RDKit.
-    ligandFile = f"{pre}/{pdb}_FYH_ligand.sdf"
-    smiles = Chem.MolToSmiles(Chem.MolFromMolFile(ligandFile))
-    rdkitMolFile = f"{pre}/{pdb}_FYH_mol_from_rdkit.sdf"
-    shift_dis = 0  # for visual only, could be any number, shift the ligand away from the protein.
-    generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=shift_dis)
-
-    '''Protein features'''
-    parser = PDBParser(QUIET=True)
-    s = parser.get_structure("x", proteinFile)
-    res_list = list(s.get_residues())
-    protein_dict = {}
-    protein_dict[pdb] = get_protein_feature(res_list)
+    # parser = PDBParser(QUIET=True)
+    # s = parser.get_structure(pdb, native_pdb)
+    # print(list(s.get_chains()))
     #
-    # '''ligand features'''
-    compound_dict = {}
-    for ligandName in ['STI', 'FYH']:
-        rdkitMolFile = f"{pre}/{pdb}_{ligandName}_mol_from_rdkit.sdf"
-        mol = Chem.MolFromMolFile(rdkitMolFile)
-        compound_dict[pdb + f"_{ligandName}" + "_rdkit"] = extract_torchdrug_feature_from_mol(mol, has_LAS_mask=True)
-
-    '''protein pockets features'''
-    pdb_list = [pdb]
-    ds = f"{pre}/protein_list.ds"
-    with open(ds, "w") as out:
-        for pdb in pdb_list:
-            out.write(f"./{pdb}_protein.pdb\n")
-
-    # p2rank = "bash ./p2rank_2.4.1/prank"
-    p2rank = "bash ./p2rank_2.3/prank"
-    cmd = f"{p2rank} predict {ds} -o {pre}/p2rank -threads 1"
-    os.system(cmd)
+    # # list HETATMs
+    # c = s[0]['A']
+    # res_list = list(c.get_residues())
+    # hetro_list = [res for res in res_list if (res.full_id[-1][0] != ' ' and res.full_id[-1][0] != 'W')]
+    # print(hetro_list)
     #
-    # '''Aggregate all features together'''
-    info = []
-    for pdb in pdb_list:
-        for compound_name in list(compound_dict.keys()):
-            # use protein center as the block center.
-            com = ",".join([str(a.round(3)) for a in protein_dict[pdb][0].mean(axis=0).numpy()])
-            info.append([pdb, compound_name, "protein_center", com])
-
-            p2rankFile = f"{pre}/p2rank/{pdb}_protein.pdb_predictions.csv"
-            pocket = pd.read_csv(p2rankFile)
-            pocket.columns = pocket.columns.str.strip()
-            pocket_coms = pocket[['center_x', 'center_y', 'center_z']].values
-            for ith_pocket, com in enumerate(pocket_coms):
-                com = ",".join([str(a.round(3)) for a in com])
-                info.append([pdb, compound_name, f"pocket_{ith_pocket + 1}", com])
-    info = pd.DataFrame(info, columns=['protein_name', 'compound_name', 'pocket_name', 'pocket_com'])
-    print(info)
-
-    dataset_path = f"{pre}/{pdb}_dataset/"
-    os.system(f"rm -r {dataset_path}")
-    os.system(f"mkdir -p {dataset_path}")
-    dataset = TankBind_prediction(dataset_path, data=info, protein_dict=protein_dict, compound_dict=compound_dict)
+    # # save cleaned protein.
+    # ligand_seq_id = 602
+    # proteinFile = f"{pre}/{pdb}_protein.pdb"
+    # ligandFile = f"{pre}/{pdb}_FYH_ligand.sdf"
+    # clean_res_list, ligand_list = split_protein_and_ligand(c, pdb, ligand_seq_id, proteinFile, ligandFile)
+    #
+    # ligand_seq_id = 603
+    # ligandFile = f"{pre}/{pdb}_STI_ligand.sdf"
+    # clean_res_list, ligand_list = split_protein_and_ligand(c, pdb, ligand_seq_id, proteinFile, ligandFile)
+    #
+    # # we also generated a sdf file using RDKit.
+    # ligandFile = f"{pre}/{pdb}_STI_ligand.sdf"
+    # smiles = Chem.MolToSmiles(Chem.MolFromMolFile(ligandFile))
+    # rdkitMolFile = f"{pre}/{pdb}_STI_mol_from_rdkit.sdf"
+    # shift_dis = 0  # for visual only, could be any number, shift the ligand away from the protein.
+    # generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=shift_dis)
+    #
+    # # we also generated a sdf file using RDKit.
+    # ligandFile = f"{pre}/{pdb}_FYH_ligand.sdf"
+    # smiles = Chem.MolToSmiles(Chem.MolFromMolFile(ligandFile))
+    # rdkitMolFile = f"{pre}/{pdb}_FYH_mol_from_rdkit.sdf"
+    # shift_dis = 0  # for visual only, could be any number, shift the ligand away from the protein.
+    # generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=shift_dis)
+    #
+    # '''Protein features'''
+    # parser = PDBParser(QUIET=True)
+    # s = parser.get_structure("x", proteinFile)
+    # res_list = list(s.get_residues())
+    # protein_dict = {}
+    # protein_dict[pdb] = get_protein_feature(res_list)
+    # #
+    # # '''ligand features'''
+    # compound_dict = {}
+    # for ligandName in ['STI', 'FYH']:
+    #     rdkitMolFile = f"{pre}/{pdb}_{ligandName}_mol_from_rdkit.sdf"
+    #     mol = Chem.MolFromMolFile(rdkitMolFile)
+    #     compound_dict[pdb + f"_{ligandName}" + "_rdkit"] = extract_torchdrug_feature_from_mol(mol, has_LAS_mask=True)
+    #
+    # '''protein pockets features'''
+    # pdb_list = [pdb]
+    # ds = f"{pre}/protein_list.ds"
+    # with open(ds, "w") as out:
+    #     for pdb in pdb_list:
+    #         out.write(f"./{pdb}_protein.pdb\n")
+    #
+    # # p2rank = "bash ./p2rank_2.4.1/prank"
+    # p2rank = "bash ./p2rank_2.3/prank"
+    # cmd = f"{p2rank} predict {ds} -o {pre}/p2rank -threads 1"
+    # os.system(cmd)
+    # #
+    # # '''Aggregate all features together'''
+    # info = []
+    # for pdb in pdb_list:
+    #     for compound_name in list(compound_dict.keys()):
+    #         # use protein center as the block center.
+    #         com = ",".join([str(a.round(3)) for a in protein_dict[pdb][0].mean(axis=0).numpy()])
+    #         info.append([pdb, compound_name, "protein_center", com])
+    #
+    #         p2rankFile = f"{pre}/p2rank/{pdb}_protein.pdb_predictions.csv"
+    #         pocket = pd.read_csv(p2rankFile)
+    #         pocket.columns = pocket.columns.str.strip()
+    #         pocket_coms = pocket[['center_x', 'center_y', 'center_z']].values
+    #         for ith_pocket, com in enumerate(pocket_coms):
+    #             com = ",".join([str(a.round(3)) for a in com])
+    #             info.append([pdb, compound_name, f"pocket_{ith_pocket + 1}", com])
+    # info = pd.DataFrame(info, columns=['protein_name', 'compound_name', 'pocket_name', 'pocket_com'])
+    # print(info)
+    #
+    # dataset_path = f"{pre}/{pdb}_dataset/"
+    # os.system(f"rm -r {dataset_path}")
+    # os.system(f"mkdir -p {dataset_path}")
+    # dataset = TankBind_prediction(dataset_path, data=info, protein_dict=protein_dict, compound_dict=compound_dict)
     #
 
     # '''Predict'''
