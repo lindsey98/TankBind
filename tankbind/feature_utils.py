@@ -23,6 +23,9 @@ from torchdrug import data as td     # conda install torchdrug -c milagraph -c c
 import random
 
 def read_mol(sdf_filename, mol2_filename, verbose=False):
+    '''
+        Read mol from sdf/mol file
+    '''
     def read_and_process(file_name, file_format):
         """Attempt to read and sanitize a molecule from a given file."""
         if file_format == 'sdf':
@@ -38,7 +41,6 @@ def read_mol(sdf_filename, mol2_filename, verbose=False):
         try:
             Chem.SanitizeMol(mol)
             mol = Chem.RemoveHs(mol)
-            sm = Chem.MolToSmiles(mol)
             return mol, None  # No error
         except Exception as e:
             return None, str(e)
@@ -63,9 +65,10 @@ def read_mol(sdf_filename, mol2_filename, verbose=False):
 
     return mol, bool((error is not None))
 
-
 def write_renumbered_sdf(to_file, sdf_filename, mol2_filename):
-    # Improved read_mol function should be defined in the same script or imported if it's in a different module
+    '''
+        Read the sdf/mol file, and re-number the atoms
+    '''
     mol, problem = read_mol(sdf_filename,  mol2_filename)  # Assuming read_molecule is the improved version of read_mol
 
     if problem or mol is None:
@@ -85,6 +88,32 @@ def write_renumbered_sdf(to_file, sdf_filename, mol2_filename):
 
     except Exception as e:
         print(f"An error occurred while writing the molecule: {e}")
+
+
+def generate_conformation(mol):
+    mol = Chem.AddHs(mol)
+    ps = AllChem.ETKDGv2()
+    try:
+        rid = AllChem.EmbedMolecule(mol, ps)
+        AllChem.MMFFOptimizeMolecule(mol, maxIters=500, confId=0)
+    except:
+        mol.Compute2DCoords()
+    mol = Chem.RemoveHs(mol)
+    return mol
+
+def generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=30, fast_generation=False):
+    '''
+        Generate the lowest-engergy conformation from smiles, and save to rdf
+    '''
+    mol_from_rdkit = Chem.MolFromSmiles(smiles)
+    if fast_generation:
+        # conformation generated using Compute2DCoords is very fast, but less accurate.
+        mol_from_rdkit.Compute2DCoords()
+    else:
+        mol_from_rdkit = generate_conformation(mol_from_rdkit)
+    coords = mol_from_rdkit.GetConformer().GetPositions()
+    new_coords = coords + np.array([shift_dis, shift_dis, shift_dis])
+    write_with_new_coords(mol_from_rdkit, new_coords, rdkitMolFile)
 
 def get_canonical_smiles(smiles):
     return Chem.MolToSmiles(Chem.MolFromSmiles(smiles))
@@ -305,16 +334,6 @@ def split_protein_and_ligand(c, pdb, ligand_seq_id, proteinFile, ligandFile):
     open(ligandFile , 'wb').write(r.content)
     return clean_res_list, ligand_list
 
-def generate_conformation(mol):
-    mol = Chem.AddHs(mol)
-    ps = AllChem.ETKDGv2()
-    try:
-        rid = AllChem.EmbedMolecule(mol, ps)
-        AllChem.MMFFOptimizeMolecule(mol, maxIters=500, confId=0)
-    except:
-        mol.Compute2DCoords()
-    mol = Chem.RemoveHs(mol)
-    return mol
 
 def write_with_new_coords(mol, new_coords, toFile):
     # put this new coordinates into the sdf file.
@@ -327,17 +346,6 @@ def write_with_new_coords(mol, new_coords, toFile):
     w.write(mol)
     w.close()
 
-def generate_sdf_from_smiles_using_rdkit(smiles, rdkitMolFile, shift_dis=30, fast_generation=False):
-    # 搜索30个ligand构象
-    mol_from_rdkit = Chem.MolFromSmiles(smiles)
-    if fast_generation:
-        # conformation generated using Compute2DCoords is very fast, but less accurate.
-        mol_from_rdkit.Compute2DCoords()
-    else:
-        mol_from_rdkit = generate_conformation(mol_from_rdkit)
-    coords = mol_from_rdkit.GetConformer().GetPositions()
-    new_coords = coords + np.array([shift_dis, shift_dis, shift_dis])
-    write_with_new_coords(mol_from_rdkit, new_coords, rdkitMolFile)
 
 def select_chain_within_cutoff_to_ligand_v2(x):
     pdb_file, ligand_file, cutoff, to_file = x
