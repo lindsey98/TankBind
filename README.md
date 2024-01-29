@@ -11,28 +11,29 @@ To experience the latest version, which includes various improvements made to th
 If you have any question or suggestion, please feel free to open an issue or email me at [wei.lu@galixir.com](wei.lu@galixir.com) or shuangjia zheng at [shuangjia.zheng@galixir.com](shuangjia.zheng@galixir.com).
 
 ## Installation
-Original
-````
-conda create -n tankbind_py38 python=3.8
-conda activate tankbind_py38
-conda install pytorch cudatoolkit=11.3 -c pytorch
-conda install torchdrug=0.1.2 pyg=2.1.0 biopython nglview jupyterlab -c milagraph -c conda-forge -c pytorch -c pyg
-pip install biopython tqdm mlcrate pyarrow
-rdkit version used: 2021.03.4
-````
 
-I have tried CUDA: => but then torch-cluster is not compatible => the root cause is my nvcc -v is 10.1 but my pytorch is using cuda 11.6. 
-However, there is no compatible lower CUDA for pytorch 1.13.1. 
+Working on GPU? torch=1.13.1 and torchdrug=0.1.2 are needed. 
+Therefore, the cuda must be version 11.6 or 11.7. Check your cuda version by running _nvcc --version_, 
+If the cuda version is not satisfied, please check the https://developer.nvidia.com/cuda-11-6-0-download-archive, or https://developer.nvidia.com/cuda-11-7-0-download-archive.
+After that, edit the _~/.bashrc_ file, add the following two lines, this will update the environment variable:
+```bash
+export PATH=/usr/local/cuda-11.7/bin:$PATH
+export LD_LIBRARY_PATH=/usr/local/cuda-11.7/lib64:$LD_LIBRARY_PATH
+```
+Then run _source ~/.bashrc_ to make the updates take effect.
+
+Once cuda version is correct, run the following to install packages:
 ```bash
 conda create -n tankbind_py38 python=3.8
 conda activate tankbind_py38
-pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu116
+pip install torch==1.13.1+cu117 torchvision==0.14.1+cu117 torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cu117
+pip install torch_cluster -f https://data.pyg.org/whl/torch-1.13.1+cu117.html
 pip install torch_geometric
 pip install torchdrug==0.1.2
-pip install rdkit
+pip install rdkit biopython tqdm mlcrate pyarrow
 ```
 
-What about CPU? Finally working. torch=1.13.1 and torchdrug=0.1.2 are must.
+Working on CPU? Note that CPU is much slower than GPU (5 hours v.s. 2 minutes).
 ```
 pip install torch==1.13.1+cpu torchvision==0.14.1+cpu torchaudio==0.13.1 --extra-index-url https://download.pytorch.org/whl/cpu
 pip install torch_geometric
@@ -42,7 +43,7 @@ pip install rdkit
 sudo apt-get install ninja-build
 ```
 
-p2rank v2.3 could be downloaded from here:
+Download p2rank from the following link and put it under folder p2rank_2.3/:
 
 https://github.com/rdk/p2rank/releases/download/2.3/p2rank_2.3.tar.gz
 
