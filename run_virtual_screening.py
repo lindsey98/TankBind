@@ -1,15 +1,12 @@
 #### Run virtual screening over drugbank
 import shutil
-
 from Bio.PDB import PDBParser
 from tankbind.feature_utils import get_clean_res_list, get_protein_feature
 import pandas as pd
 import os
-from tqdm import tqdm
-from torch_geometric.data import Dataset
-from tankbind.utils import construct_data_from_graph_gvp
 import rdkit.Chem as Chem    # conda install rdkit -c rdkit if import failure.
 from tankbind.feature_utils import extract_torchdrug_feature_from_mol, get_canonical_smiles, generate_sdf_from_smiles_using_rdkit, write_renumbered_sdf, read_mol
+from tankbind.generation_utils import get_LAS_distance_constraint_mask, get_info_pred_distance, write_with_new_coords
 from tankbind.data import TankBind_prediction
 import torch
 import numpy as np
@@ -38,6 +35,7 @@ if __name__ == '__main__':
                         help='Where to save the Protein pockets p2rank predictions')
 
     parser.add_argument('--dataset_path', default='./datasets/protein315_to_drugbank9k/', help='Where to save the dataset')
+    parser.add_argument('--result_path', default='./datasets/protein315_to_drugbank9k_results/', help='Where to save the binding results')
 
     parser.add_argument('--modelFile', default="./saved_models/self_dock.pt", help='Pretrained model file path')
 
@@ -50,6 +48,7 @@ if __name__ == '__main__':
     os.makedirs(args.ligandRdkitDirs, exist_ok=True)
     os.makedirs(args.proteinDirsUni, exist_ok=True)
     os.makedirs(f"{args.dataset_path}", exist_ok=True)
+    os.makedirs(args.result_path, exist_ok=True)
 
     '''Protein features'''
     if os.path.exists(args.protein_features):
@@ -105,7 +104,7 @@ if __name__ == '__main__':
         torch.save(compound_dict, args.ligand_features)
 
     #
-    '''Construct prediction dataset'''
+    '''Construct protein-pocket-ligand dataset'''
     for proteinName in list(protein_dict.keys()):
         if os.path.exists(f"{args.dataset_path}/{proteinName}") and len(os.listdir(f"{args.dataset_path}/{proteinName}/processed")) >= 5:
             continue
@@ -129,7 +128,6 @@ if __name__ == '__main__':
         print(info)
 
         os.system(f"rm -r {args.dataset_path}/{proteinName}")
-        os.system(f"mkdir -p {args.dataset_path}")
         dataset = TankBind_prediction(f"{args.dataset_path}/{proteinName}",
                                       data=info,
                                       protein_dict=protein_dict,
@@ -141,66 +139,91 @@ if __name__ == '__main__':
     # Use the self-dock model instead of the re-dock model
     model.load_state_dict(torch.load(args.modelFile, map_location=args.device))
     _ = model.eval()
-
-    for proteinName in list(protein_dict.keys()):
-
-        dataset = TankBind_prediction(f"{args.dataset_path}/{proteinName}")
-
-        data_loader = DataLoader(dataset,
-                                 batch_size=args.batch_size,
-                                 follow_batch=['x', 'y', 'compound_pair'],
-                                 shuffle=False,
-                                 num_workers=1)
-
-        affinity_pred_list = []
-        y_pred_list = []
-        for data in tqdm(data_loader):
-            data = data.to(args.device)
-            y_pred, affinity_pred = model(data) #
-            affinity_pred_list.append(affinity_pred.detach().cpu()) # affinity
-            for i in range(data.y_batch.max() + 1):
-                y_pred_list.append((y_pred[data['y_batch'] == i]).detach().cpu()) # inter-molecule distance map
-
-        affinity_pred_list = torch.cat(affinity_pred_list)
-
-        info = dataset.data
-        info['affinity'] = affinity_pred_list
-
-        info.to_csv(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv")
-
-        chosen = info.loc[info.groupby(['protein_name', 'compound_name'], sort=False)['affinity'].agg('idxmax')].reset_index()
-        print(chosen)
-
-    # from generation_utils import get_LAS_distance_constraint_mask, get_info_pred_distance, write_with_new_coords
-    # # pick one with affinity greater than 7.
-    # chosen = info.loc[info.groupby(['protein_name', 'compound_name'], sort=False)['affinity'].agg('idxmax')].reset_index()
-    # chosen = chosen.query("affinity > 7").reset_index(drop=True)
-    # line = chosen.iloc[0]
-    # idx = line['index']
-    # one_data = dataset[idx]
-    # data_with_batch_info = next(iter(DataLoader(dataset[idx:idx+1],
-    #                               batch_size=1,
-    #                               follow_batch=['x', 'y', 'compound_pair'],
-    #                               shuffle=False,
-    #                               num_workers=1)))
-    # y_pred, affinity_pred = model(data_with_batch_info)
     #
-    # coords = one_data.coords.to(device)
-    # protein_nodes_xyz = one_data.node_xyz.to(device)
-    # n_compound = coords.shape[0]
-    # n_protein = protein_nodes_xyz.shape[0]
-    # y_pred = y_pred.reshape(n_protein, n_compound).to(device).detach()
-    # y = one_data.dis_map.reshape(n_protein, n_compound).to(device)
-    # compound_pair_dis_constraint = torch.cdist(coords, coords)
+    for proteinName in list(protein_dict.keys()):
+        if not os.path.exists(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv"):
+            dataset = TankBind_prediction(f"{args.dataset_path}/{proteinName}")
 
-    # smiles = line['smiles']
-    # print(smiles)
-    # mol = Chem.MolFromSmiles(smiles)
-    # mol.Compute2DCoords()
-    # LAS_distance_constraint_mask = get_LAS_distance_constraint_mask(mol).bool()
-    # info = get_info_pred_distance(coords, y_pred, protein_nodes_xyz, compound_pair_dis_constraint,
-    #                               LAS_distance_constraint_mask=LAS_distance_constraint_mask,
-    #                               n_repeat=1, show_progress=False)
-    # toFile = f'{base_pre}/one_tankbind.sdf'
-    # new_coords = info.sort_values("loss")['coords'].iloc[0].astype(np.double)
-    # write_with_new_coords(mol, new_coords, toFile)
+            data_loader = DataLoader(dataset,
+                                     batch_size=args.batch_size,
+                                     follow_batch=['x', 'y', 'compound_pair'],
+                                     shuffle=False,
+                                     num_workers=1)
+
+            affinity_pred_list = []
+            y_pred_list = []
+            for data in tqdm(data_loader):
+                data = data.to(args.device)
+                y_pred, affinity_pred = model(data) #
+                affinity_pred_list.append(affinity_pred.detach().cpu()) # affinity
+                for i in range(data.y_batch.max() + 1):
+                    y_pred_list.append((y_pred[data['y_batch'] == i]).detach().cpu()) # inter-molecule distance map
+
+            affinity_pred_list = torch.cat(affinity_pred_list)
+
+            info = dataset.data
+            info['affinity'] = affinity_pred_list
+
+            info.to_csv(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv")
+
+            print(info.head(5))
+
+
+    '''Filter inference results (affinity greater than 7, distance less than 10A)'''
+    for proteinName in list(protein_dict.keys()):
+        dataset = TankBind_prediction(f"{args.dataset_path}/{proteinName}")
+        info = pd.read_csv(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv")
+
+        chosen = info.loc[info.groupby(['protein_name'], sort=False)['affinity'].agg('idxmax')].reset_index()
+        chosen = chosen.query("affinity > 7").reset_index(drop=True)
+
+        if len(chosen) > 0:
+            for it in range(len(chosen)):
+                line = chosen.iloc[it]
+                idx = line['index']
+                one_data = dataset[idx]
+                data_with_batch_info = next(iter(DataLoader(dataset[idx:idx+1],
+                                              batch_size=1,
+                                              follow_batch=['x', 'y', 'compound_pair'],
+                                              shuffle=False,
+                                              num_workers=1)))
+                data_with_batch_info = data_with_batch_info.to(args.device)
+                protein2ligand_dist, affinity_pred = model(data_with_batch_info)
+
+                ligand_coords = one_data.coords.to(args.device)
+                protein_coords = one_data.node_xyz.to(args.device)
+
+                n_compound = ligand_coords.shape[0]
+                n_protein = protein_coords.shape[0]
+
+                protein2ligand_dist = protein2ligand_dist.reshape(n_protein, n_compound).to(args.device).detach()
+                # we ignore the unlikely binding if the protein-ligand has no pairwise distance less than 10A
+                cutoff = 10
+                is_in_contact = torch.any(protein2ligand_dist < cutoff, axis=1)
+                if torch.sum(is_in_contact).item() == 0:
+                    continue
+
+                ligand2ligand_dist = torch.cdist(ligand_coords, ligand_coords)
+
+                rdkitMolFile = f"{args.ligandRdkitDirs}/{line['compound_name'].split('_rdkit')[0]}_from_rdkit.sdf"
+                mol = Chem.MolFromMolFile(rdkitMolFile)
+                LAS_distance_constraint_mask = get_LAS_distance_constraint_mask(mol).bool()
+                # perform an optimization to get the exact coord
+                predictions = get_info_pred_distance(ligand_coords,
+                                                     protein2ligand_dist,
+                                                     protein_coords,
+                                                     ligand2ligand_dist,
+                                                     LAS_distance_constraint_mask=LAS_distance_constraint_mask,
+                                                     n_repeat=1,
+                                                     show_progress=False)
+
+                # write the ligand sdf
+                os.makedirs(f"{args.result_path}/{line['protein_name']}", exist_ok=True)
+                toFile = f"{args.result_path}/{line['protein_name']}/{line['protein_name']}_{line['compound_name'].split('_rdkit')[0]}_affinity{line['affinity']}.sdf"
+                new_coords = predictions.sort_values("loss")['coords'].iloc[0].astype(np.double)
+                write_with_new_coords(mol, new_coords, toFile)
+
+                # copy the protein to here as well?
+                proteinfile_path = os.path.join(args.proteinDirsUni, line['protein_name'] + ".pdb")
+                if not os.path.exists(f"{args.result_path}/{line['protein_name']}/{line['protein_name']}.pdb"):
+                    shutil.copyfile(proteinfile_path, f"{args.result_path}/{line['protein_name']}/{line['protein_name']}.pdb")

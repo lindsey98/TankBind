@@ -72,21 +72,21 @@ if __name__ == '__main__':
         write_renumbered_sdf(toFile, sdf_fileName, mol2_fileName)
 
     '''We also reduced the possibility of encountering equally valid binding sites by removing chains that have no atom within 10Å from any atom of the ligand following the protocol described in [36].'''
-    # toFolder = f"{pre}/protein_remove_extra_chains_10A/"
-    # os.makedirs(toFolder, exist_ok=True)
-    # input_ = []
-    # cutoff = 10
-    # for pdb in data.pdb.values:
-    #     pdbFile = f"{pre}/merged_pdbbind_files/{pdb}/{pdb}_protein.pdb"
-    #     ligandFile = f"{pre}/renumber_atom_index_same_as_smiles/{pdb}.sdf"
-    #     toFile = f"{toFolder}/{pdb}_protein.pdb"
-    #     x = (pdbFile, ligandFile, cutoff, toFile)
-    #     input_.append(x)
-    #
-    # pool = mlc.SuperPool(64)
-    # pool.pool.restart()
-    # _ = pool.map(select_chain_within_cutoff_to_ligand_v2, input_)
-    # pool.exit()
+    toFolder = f"{pre}/protein_remove_extra_chains_10A/"
+    os.makedirs(toFolder, exist_ok=True)
+    input_ = []
+    cutoff = 10
+    for pdb in data.pdb.values:
+        pdbFile = f"{pre}/merged_pdbbind_files/{pdb}/{pdb}_protein.pdb"
+        ligandFile = f"{pre}/renumber_atom_index_same_as_smiles/{pdb}.sdf"
+        toFile = f"{toFolder}/{pdb}_protein.pdb"
+        x = (pdbFile, ligandFile, cutoff, toFile)
+        input_.append(x)
+
+    pool = mlc.SuperPool(64)
+    pool.pool.restart()
+    _ = pool.map(select_chain_within_cutoff_to_ligand_v2, input_)
+    pool.exit()
 
     '''Segment the protein into functional blocks with p2rank segmentation. First download p2rank'''
     # ds = f"protein_list.ds"

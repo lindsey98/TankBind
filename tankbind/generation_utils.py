@@ -99,8 +99,13 @@ def get_info_pred_distance(coords, y_pred, protein_nodes_xyz, compound_pair_dis_
     for repeat in it:
         # random initialization.
         # x = torch.rand(coords.shape, requires_grad=True)
-        x, loss_list, rmsd_list = distance_optimize_compound_coords(coords, y_pred, protein_nodes_xyz, 
-                            compound_pair_dis_constraint, LAS_distance_constraint_mask=LAS_distance_constraint_mask, mode=mode, show_progress=False)
+        x, loss_list, rmsd_list = distance_optimize_compound_coords(coords,
+                                                                    y_pred,
+                                                                    protein_nodes_xyz,
+                                                                    compound_pair_dis_constraint,
+                                                                    LAS_distance_constraint_mask=LAS_distance_constraint_mask,
+                                                                    mode=mode,
+                                                                    show_progress=False)
         # rmsd = compute_rmsd(coords.detach().cpu().numpy(), movable_coords.detach().cpu().numpy())
         # print(coords, movable_coords)
         # rmsd = compute_rmsd(coords, x.detach())
