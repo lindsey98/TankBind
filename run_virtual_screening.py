@@ -35,7 +35,7 @@ if __name__ == '__main__':
                         help='Where to save the Protein pockets p2rank predictions')
 
     parser.add_argument('--dataset_path', default='./datasets/protein315_to_drugbank9k/', help='Where to save the dataset')
-    parser.add_argument('--result_path', default='./datasets/protein315_to_drugbank9k_results/', help='Where to save the binding results')
+    parser.add_argument('--result_path', default='./datasets/protein315_to_drugbank9k_results_visualize/', help='Where to save the binding results')
 
     parser.add_argument('--modelFile', default="./saved_models/self_dock.pt", help='Pretrained model file path')
 
@@ -141,7 +141,7 @@ if __name__ == '__main__':
     _ = model.eval()
     #
     for proteinName in list(protein_dict.keys()):
-        if not os.path.exists(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv"):
+        if not os.path.exists(f"./datasets/protein315_to_drugbank9k_results_csv/protein315_to_drugbank9k_{proteinName}_results.csv"):
             dataset = TankBind_prediction(f"{args.dataset_path}/{proteinName}")
 
             data_loader = DataLoader(dataset,
@@ -164,7 +164,7 @@ if __name__ == '__main__':
             info = dataset.data
             info['affinity'] = affinity_pred_list
 
-            info.to_csv(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv")
+            info.to_csv(f"./datasets/protein315_to_drugbank9k_results_csv/protein315_to_drugbank9k_{proteinName}_results.csv")
 
             print(info.head(5))
 
@@ -172,15 +172,16 @@ if __name__ == '__main__':
     '''Filter inference results (affinity greater than 7, distance less than 10A)'''
     for proteinName in list(protein_dict.keys()):
         dataset = TankBind_prediction(f"{args.dataset_path}/{proteinName}")
-        info = pd.read_csv(f"./datasets/protein315_to_drugbank9k_{proteinName}_results.csv")
+        info = pd.read_csv(f"./datasets/protein315_to_drugbank9k_results_csv/protein315_to_drugbank9k_{proteinName}_results.csv")
 
-        chosen = info.loc[info.groupby(['protein_name'], sort=False)['affinity'].agg('idxmax')].reset_index()
-        chosen = chosen.query("affinity > 7").reset_index(drop=True)
+        info['original_index'] = info.index
+        top3 = info.groupby('protein_name', group_keys=False).apply(lambda x: x.nlargest(3, 'affinity'))
+        chosen = top3.query("affinity > 7").reset_index(drop=True)
 
         if len(chosen) > 0:
             for it in range(len(chosen)):
                 line = chosen.iloc[it]
-                idx = line['index']
+                idx = line['original_index']
                 one_data = dataset[idx]
                 data_with_batch_info = next(iter(DataLoader(dataset[idx:idx+1],
                                               batch_size=1,
@@ -219,7 +220,7 @@ if __name__ == '__main__':
 
                 # write the ligand sdf
                 os.makedirs(f"{args.result_path}/{line['protein_name']}", exist_ok=True)
-                toFile = f"{args.result_path}/{line['protein_name']}/{line['protein_name']}_{line['compound_name'].split('_rdkit')[0]}_affinity{line['affinity']}.sdf"
+                toFile = f"{args.result_path}/{line['protein_name']}/{line['protein_name']}_{line['compound_name'].split('_rdkit')[0]}_{line['pocket_name']}_affinity{line['affinity']}.sdf"
                 new_coords = predictions.sort_values("loss")['coords'].iloc[0].astype(np.double)
                 write_with_new_coords(mol, new_coords, toFile)
 
