@@ -319,6 +319,7 @@ class IaBNet_with_affinity(torch.nn.Module):
         self.leaky = torch.nn.LeakyReLU()
         self.dropout = nn.Dropout2d(p=0.25)
     def forward(self, data):
+        #### Perform GNN for protein
         if self.protein_embed_mode == 0:
             x = data['protein'].x.float()
             edge_index = data[("protein", "p2p", "protein")].edge_index
@@ -330,6 +331,7 @@ class IaBNet_with_affinity(torch.nn.Module):
             protein_batch = data['protein'].batch
             protein_out = self.conv_protein(nodes, data[("protein", "p2p", "protein")]["edge_index"], edges, data.seq)
 
+        #### Perform GNN for ligand
         if self.compound_embed_mode == 0:
             compound_x = data['compound'].x.float()
             compound_edge_index = data[("compound", "c2c", "compound")].edge_index
@@ -343,23 +345,21 @@ class IaBNet_with_affinity(torch.nn.Module):
             compound_batch = data['compound'].batch
             compound_out = self.conv_compound(compound_edge_index,edge_weight,compound_edge_feature,compound_x.shape[0],compound_x)['node_feature']
 
-        # protein_batch version could further process b matrix. better than for loop.
-        # protein_out_batched of shape b, n, c
+        # protein_batch version could further process b matrix. better than for loop. protein_out_batched of shape b, n, c
         protein_out_batched, protein_out_mask = to_dense_batch(protein_out, protein_batch)
         compound_out_batched, compound_out_mask = to_dense_batch(compound_out, compound_batch)
 
         node_xyz = data.node_xyz
 
         p_coords_batched, p_coords_mask = to_dense_batch(node_xyz, protein_batch)
-        # c_coords_batched, c_coords_mask = to_dense_batch(coords, compound_batch)
-
         protein_pair = get_pair_dis_one_hot(p_coords_batched, bin_size=2, bin_min=-1, bin_max=self.protein_bin_max)
-        # compound_pair = get_pair_dis_one_hot(c_coords_batched, bin_size=1, bin_min=-0.5, bin_max=15)
         compound_pair_batched, compound_pair_batched_mask = to_dense_batch(data.compound_pair, data.compound_pair_batch)
+
         batch_n = compound_pair_batched.shape[0]
         max_compound_size_square = compound_pair_batched.shape[1]
         max_compound_size = int(max_compound_size_square**0.5)
         assert (max_compound_size**2 - max_compound_size_square)**2 < 1e-4
+
         compound_pair = torch.zeros((batch_n, max_compound_size, max_compound_size, 16)).to(data.compound_pair.device)
         for i in range(batch_n):
             one = compound_pair_batched[i]
@@ -367,25 +367,25 @@ class IaBNet_with_affinity(torch.nn.Module):
             compound_size = int(compound_size_square**0.5)
             compound_pair[i,:compound_size, :compound_size] = one[:compound_size_square].reshape(
                                                                 (compound_size, compound_size, -1))
+
         protein_pair = self.protein_pair_embedding(protein_pair.float())
         compound_pair = self.compound_pair_embedding(compound_pair.float())
-        # b = torch.einsum("bik,bjk->bij", protein_out_batched, compound_out_batched).flatten()
-
         protein_out_batched = self.layernorm(protein_out_batched)
         compound_out_batched = self.layernorm(compound_out_batched)
-        # z of shape, b, protein_length, compound_length, channels.
+
+        ##### Get interaction matrix Z
         z = torch.einsum("bik,bjk->bijk", protein_out_batched, compound_out_batched)
         z_mask = torch.einsum("bi,bj->bij", protein_out_mask, compound_out_mask)
-        # z = z * z_mask.unsqueeze(-1)
-        # print(protein_pair.shape, compound_pair.shape, b.shape)
+
+        ##### Perform triangle attention (Eq 1) and self-attention (Eq 2 and 3)
         if self.mode == 0:
             for _ in range(1):
                 for i_module in range(self.n_trigonometry_module_stack):
                     z = z + self.dropout(self.protein_to_compound_list[i_module](z, protein_pair, compound_pair, z_mask.unsqueeze(-1)))
                     z = z + self.dropout(self.triangle_self_attention_list[i_module](z, z_mask))
                     z = self.tranistion(z)
-        # batch_dim = z.shape[0]
 
+        ##### Output affinity and distance map
         b = self.linear(z).squeeze(-1)
         y_pred = b[z_mask]
         y_pred = y_pred.sigmoid() * 10   # normalize to 0 to 10.

@@ -68,13 +68,13 @@ if __name__ == '__main__':
         torch.save(protein_dict, args.protein_features)
 
     '''Protein pockets prediction via p2rank'''
-    # # with open(args.ds, "w") as out:
-    # #     for proteinName in list(protein_dict.keys()):
-    # #         out.write(f"protein_315/{proteinName}.pdb\n")
-    # #
-    # # cmd = f"bash ./p2rank_2.3/prank predict {args.ds} -o {args.protein_pockets_p2rank} -threads 1" ## fixme: you can increase thread
-    # # os.system(cmd)
-    # # exit()
+    if not os.path.exists(args.protein_pockets_p2rank):
+        with open(args.ds, "w") as out:
+            for proteinName in list(protein_dict.keys()):
+                out.write(f"protein_315/{proteinName}.pdb\n")
+
+        cmd = f"bash ./p2rank_2.3/prank predict {args.ds} -o {args.protein_pockets_p2rank} -threads 1" ## fixme: you can increase thread
+        os.system(cmd)
 
     '''Ligand features'''
     if os.path.exists(args.ligand_features):
@@ -175,7 +175,7 @@ if __name__ == '__main__':
         info = pd.read_csv(f"./datasets/protein315_to_drugbank9k_results_csv/protein315_to_drugbank9k_{proteinName}_results.csv")
 
         info['original_index'] = info.index
-        top3 = info.groupby('protein_name', group_keys=False).apply(lambda x: x.nlargest(3, 'affinity'))
+        top3 = info.groupby('protein_name', group_keys=False).apply(lambda x: x.nlargest(3, 'affinity')) # get top-3 results
         chosen = top3.query("affinity > 7").reset_index(drop=True)
 
         if len(chosen) > 0:
